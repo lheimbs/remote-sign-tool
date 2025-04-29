@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Mvc;
 using RemoteSignTool.Server.Services;
 using NLog.Web;
 
@@ -27,7 +26,8 @@ else
     app.UseHsts();
 }
 
-app.UseHttpsRedirection();
+// app.UseHttpsRedirection();
 app.UseRouting();
+app.MapControllers();
 
 app.Run();

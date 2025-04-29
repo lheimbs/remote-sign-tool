@@ -3,8 +3,6 @@ using NLog;
 using RemoteSignTool.Common.Dto;
 using RemoteSignTool.Server.Services;
 using ICSharpCode.SharpZipLib.Zip;
-using System.IO;
-using System.Threading.Tasks;
 
 namespace RemoteSignTool.Server.Controllers;
 
@@ -78,7 +76,7 @@ public class SignToolController : ControllerBase
         {
             Logger.Info("SignTool successfully signed files");
             // Create archive with signed files
-            CreateZipArchive(Directory.GetFiles(extractionDirectoryName), 
+            CreateZipArchive(Directory.GetFiles(extractionDirectoryName),
                 Path.Combine(UploadController.UploadDirectoryName, signedArchiveName));
             Logger.Info("Archive with signed files created: {ArchiveName}", signedArchiveName);
         }
@@ -108,22 +106,22 @@ public class SignToolController : ControllerBase
     {
         using var fs = System.IO.File.OpenRead(archivePath);
         using var zipInputStream = new ZipInputStream(fs);
-        
+
         ZipEntry entry;
         while ((entry = zipInputStream.GetNextEntry()) != null)
         {
             if (string.IsNullOrEmpty(entry.Name) || entry.IsDirectory)
                 continue;
-                
+
             var outputPath = Path.Combine(outputDirectory, entry.Name);
-            
+
             // Create directory if it doesn't exist
             var directoryName = Path.GetDirectoryName(outputPath);
             if (directoryName != null && !Directory.Exists(directoryName))
             {
                 Directory.CreateDirectory(directoryName);
             }
-            
+
             using var outputStream = System.IO.File.Create(outputPath);
             byte[] buffer = new byte[4096];
             int size;
@@ -143,16 +141,16 @@ public class SignToolController : ControllerBase
     {
         using var zipOutputStream = new ZipOutputStream(System.IO.File.Create(archivePath));
         zipOutputStream.SetLevel(9); // Maximum compression
-        
+
         byte[] buffer = new byte[4096];
-        
+
         foreach (var filePath in filesToAdd)
         {
             var fileName = Path.GetFileName(filePath);
             var entry = new ZipEntry(fileName);
             entry.DateTime = System.IO.File.GetLastWriteTime(filePath);
             zipOutputStream.PutNextEntry(entry);
-            
+
             using var fs = System.IO.File.OpenRead(filePath);
             int sourceBytes;
             do
@@ -161,7 +159,7 @@ public class SignToolController : ControllerBase
                 zipOutputStream.Write(buffer, 0, sourceBytes);
             } while (sourceBytes > 0);
         }
-        
+
         zipOutputStream.Finish();
     }
 }

@@ -22,7 +22,7 @@ class Program
     private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
 
     private const string TempDirectoryName = "Temp";
-    
+
     /// <summary>
     /// Dictionary of supported sign options with their parameter count
     /// </summary>
@@ -174,13 +174,13 @@ class Program
         Directory.CreateDirectory(TempDirectoryName);
         var archiveToUploadName = string.Format("{0}.zip", Path.GetRandomFileName());
         var archiveToUploadPath = Path.Combine(TempDirectoryName, archiveToUploadName);
-        
+
         CreateZipArchive(filesToSign, archiveToUploadPath);
 
         string signedArchivePath;
         try
         {
-            Logger.Info($"Uploading zip file: {archiveToUploadName}, containing files: {string.Join(", ", filesToSign.ToArray())}");
+            Logger.Info($"Uploading zip file: {archiveToUploadPath}, containing files: {string.Join(", ", filesToSign.ToArray())}");
             signedArchivePath = CommunicateWithServer(archiveToUploadPath, string.Join(" ", signSubcommands)).Result;
         }
         catch (Exception ex)
@@ -196,7 +196,7 @@ class Program
         if (!string.IsNullOrEmpty(signedArchivePath))
         {
             var targetDirectoryName = signedArchivePath.Substring(0, signedArchivePath.Length - 4);
-            
+
             ExtractZipArchive(signedArchivePath, targetDirectoryName);
 
             foreach (var signedFile in Directory.GetFiles(targetDirectoryName))
@@ -224,16 +224,16 @@ class Program
     {
         using var zipOutputStream = new ZipOutputStream(File.Create(archivePath));
         zipOutputStream.SetLevel(9); // Maximum compression
-        
+
         byte[] buffer = new byte[4096];
-        
+
         foreach (var filePath in filesToAdd)
         {
             var fileName = Path.GetFileName(filePath);
             var entry = new ZipEntry(fileName);
             entry.DateTime = File.GetLastWriteTime(filePath);
             zipOutputStream.PutNextEntry(entry);
-            
+
             using var fs = File.OpenRead(filePath);
             int sourceBytes;
             do
@@ -242,7 +242,7 @@ class Program
                 zipOutputStream.Write(buffer, 0, sourceBytes);
             } while (sourceBytes > 0);
         }
-        
+
         zipOutputStream.Finish();
     }
 
@@ -255,17 +255,17 @@ class Program
     {
         using var fs = File.OpenRead(archivePath);
         using var zipInputStream = new ZipInputStream(fs);
-        
+
         Directory.CreateDirectory(outputDirectory);
-        
+
         ZipEntry entry;
         while ((entry = zipInputStream.GetNextEntry()) != null)
         {
             if (string.IsNullOrEmpty(entry.Name) || entry.IsDirectory)
                 continue;
-                
+
             var outputPath = Path.Combine(outputDirectory, entry.Name);
-            
+
             using var outputStream = File.Create(outputPath);
             byte[] buffer = new byte[4096];
             int size;
@@ -284,79 +284,81 @@ class Program
     /// <returns>Path to the downloaded signed archive, or null if signing failed</returns>
     private static async Task<string> CommunicateWithServer(string archivePath, string signSubcommands)
     {
-        using (var progressHandler = new ProgressMessageHandler())
-        {
-            progressHandler.HttpSendProgress += SendProgressHandler;
-            progressHandler.HttpReceiveProgress += ReceiveProgressHandler;
+        using var progressHandler = new ProgressMessageHandler();
+        progressHandler.HttpSendProgress += SendProgressHandler;
+        progressHandler.HttpReceiveProgress += ReceiveProgressHandler;
 
-            using (var client = HttpClientFactory.Create(progressHandler))
+        using var client = HttpClientFactory.Create(progressHandler);
+        var archiveName = Path.GetFileName(archivePath);
+        var serverBaseAddress = ConfigurationManager.AppSettings["ServerBaseUrl"];
+        client.BaseAddress = new Uri(serverBaseAddress);
+        client.DefaultRequestHeaders.Accept.Clear();
+        client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+            // FIXED: Correct multipart form data handling
+            using var content = new MultipartFormDataContent();
+            // Use FileStream directly with StreamContent instead of opening file separately
+            using var fileStream2 = new FileStream(archivePath, FileMode.Open, FileAccess.Read);
+            var fileContent = new StreamContent(fileStream2);
+            
+            // IMPORTANT: Don't set ContentType for the file part - let the multipart handler do it
+            // Just set the name and filename in ContentDisposition
+            fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
             {
-                var archiveName = Path.GetFileName(archivePath);
-                var serverBaseAddress = ConfigurationManager.AppSettings["ServerBaseUrl"];
-                client.BaseAddress = new Uri(serverBaseAddress);
-                client.DefaultRequestHeaders.Accept.Clear();
-                client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                Name = "file", // IMPORTANT: Don't add quotes - framework handles this
+                FileName = archiveName // IMPORTANT: Don't add quotes - framework handles this
+            };
+            
+            content.Add(fileContent, "file", archiveName); // This properly formats the content-disposition header
 
-                using (var content = new MultipartFormDataContent())
-                {
-                    var fileContent = new StreamContent(File.OpenRead(archivePath));
-                    fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment")
-                    {
-                        FileName = Path.GetFileName(archivePath)
-                    };
-                    content.Add(fileContent);
+        var requestUri = "api/upload/save";
+        var uploadResponse = await client.PostAsync(requestUri, content);
 
-                    var requestUri = "api/upload/save";
-                    var uploadResponse = await client.PostAsync(requestUri, content);
-
-                    if (!uploadResponse.IsSuccessStatusCode)
-                    {
-                        await ShowErrorAsync(uploadResponse);
-                        return null;
-                    }
-                }
-
-                var signRequestDto = new SignDto()
-                {
-                    ArchiveName = archiveName,
-                    SignSubcommands = signSubcommands
-                };
-
-                Logger.Info($"Perform sign for: {archiveName}, using commands: {signSubcommands}");
-
-                var signResponse = await client.PostAsJsonAsync("api/signtool/sign", signRequestDto);
-                if (!signResponse.IsSuccessStatusCode)
-                {
-                    await ShowErrorAsync(signResponse);
-                    return null;
-                }
-
-                var signResponseDto = await signResponse.Content.ReadAsAsync<SignResultDto>();
-                if (signResponseDto.ExitCode != 0)
-                {
-                    Logger.Error("signtool.exe exited with code: {0}", signResponseDto.ExitCode);
-                    Logger.Error(signResponseDto.StandardOutput);
-                    Logger.Error(signResponseDto.StandardError);
-                    return null;
-                }
-
-                Logger.Info($"Begin to download signed archive: {archiveName}");
-
-                var downloadReponse = await client.GetStreamAsync(signResponseDto.DownloadUrl);
-                var signedArchiveName = Path.GetFileName(signResponseDto.DownloadUrl);
-                var signedArchivePath = Path.Combine(TempDirectoryName, signedArchiveName);
-
-                using (var fileStream = File.Create(signedArchivePath))
-                {
-                    await downloadReponse.CopyToAsync(fileStream);
-                }
-
-                Logger.Info($"Delete archives {archiveName}, {signedArchiveName} from server");
-
-                await client.PostAsJsonAsync("api/upload/remove", new List<string>() { archiveName, signedArchiveName });
-                return signedArchivePath;
-            }
+        if (!uploadResponse.IsSuccessStatusCode)
+        {
+            await ShowErrorAsync(uploadResponse);
+            return null;
         }
+
+        var signRequestDto = new SignDto()
+        {
+            ArchiveName = archiveName,
+            SignSubcommands = signSubcommands
+        };
+
+        Logger.Info($"Perform sign for: {archiveName}, using commands: {signSubcommands}");
+
+        var signResponse = await client.PostAsJsonAsync("api/signtool/sign", signRequestDto);
+        if (!signResponse.IsSuccessStatusCode)
+        {
+            await ShowErrorAsync(signResponse);
+            return null;
+        }
+
+        var signResponseDto = await signResponse.Content.ReadAsAsync<SignResultDto>();
+        if (signResponseDto.ExitCode != 0)
+        {
+            Logger.Error("signtool.exe exited with code: {0}", signResponseDto.ExitCode);
+            Logger.Error(signResponseDto.StandardOutput);
+            Logger.Error(signResponseDto.StandardError);
+            return null;
+        }
+
+        Logger.Info($"Begin to download signed archive: {archiveName}");
+
+        var downloadReponse = await client.GetStreamAsync(signResponseDto.DownloadUrl);
+        var signedArchiveName = Path.GetFileName(signResponseDto.DownloadUrl);
+        var signedArchivePath = Path.Combine(TempDirectoryName, signedArchiveName);
+
+        using (var fileStream = File.Create(signedArchivePath))
+        {
+            await downloadReponse.CopyToAsync(fileStream);
+        }
+
+        Logger.Info($"Delete archives {archiveName}, {signedArchiveName} from server");
+
+        await client.PostAsJsonAsync("api/upload/remove", new List<string>() { archiveName, signedArchiveName });
+        return signedArchivePath;
     }
 
     /// <summary>
@@ -369,7 +371,7 @@ class Program
         Logger.Error("Status code: {0}", response.StatusCode);
         Logger.Error(await response.Content.ReadAsStringAsync());
     }
-    
+
     /// <summary>
     /// Handler for HTTP send progress events.
     /// </summary>

@@ -11,7 +11,7 @@ namespace RemoteSignTool.Server.Services;
 /// </summary>
 public class SignToolService : ISignToolService
 {
-    private const string SignToolX64Path = @"C:\Program Files (x86)\Windows Kits\10\bin\x64\signtool.exe";
+    private const string SignToolX64Path = @"C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe";
     private const string SignToolX86Path = @"C:\Program Files (x86)\Windows Kits\10\bin\x86\signtool.exe";
     private const string WindowsSDKRootPath = @"C:\Program Files (x86)\Windows Kits\10\bin\";
 
@@ -22,7 +22,7 @@ public class SignToolService : ISignToolService
     /// </summary>
     /// <param name="path">The SignTool path if found.</param>
     /// <returns>True if the SignTool path is found, otherwise false.</returns>
-    public bool TryToFindSignToolPath(out string? path)
+    public bool TryToFindSignToolPath(out string path)
     {
         if (File.Exists(SignToolX64Path))
         {
@@ -54,7 +54,7 @@ public class SignToolService : ISignToolService
             }
         }
 
-        path = null;
+        path = string.Empty;
         return false;
     }
 

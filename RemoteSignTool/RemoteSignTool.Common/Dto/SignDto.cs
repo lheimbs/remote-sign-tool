@@ -1,9 +1,8 @@
-﻿namespace RemoteSignTool.Common.Dto
-{
-    public class SignDto
-    {
-        public string ArchiveName { get; set; }
+﻿namespace RemoteSignTool.Common.Dto;
 
-        public string SignSubcommands { get; set; }
-    }
+public class SignDto
+{
+    public string ArchiveName { get; set; }
+
+    public string SignSubcommands { get; set; }
 }

@@ -1,12 +1,10 @@
-﻿using System.Threading.Tasks;
-using RemoteSignTool.Common.Dto;
+﻿using RemoteSignTool.Common.Dto;
 
-namespace RemoteSignTool.Server.Services
+namespace RemoteSignTool.Server.Services;
+
+public interface ISignToolService
 {
-    public interface ISignToolService
-    {
-        bool TryToFindSignToolPath(out string path);
+    bool TryToFindSignToolPath(out string path);
 
-        Task<SignResultDto> Sign(string signToolPath, string signToolArguments, string workingDirectory);            
-    }
+    Task<SignResultDto> Sign(string signToolPath, string signToolArguments, string workingDirectory);
 }

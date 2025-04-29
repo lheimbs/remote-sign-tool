@@ -49,22 +49,28 @@ public class UploadController : ControllerBase
     }
 
     /// <summary>
-    /// Uploads a file to the server.
+    /// Saves uploaded files to the server's file system.
     /// </summary>
-    /// <returns>Ok if the upload is successful, or BadRequest if there are issues.</returns>
+    /// <returns>An IActionResult indicating the result of the operation.</returns>
     [HttpPost("save")]
+    [DisableRequestSizeLimit]
+    [RequestFormLimits(MultipartBodyLengthLimit = long.MaxValue)]
     public async Task<IActionResult> Save()
     {
         try
         {
+            // Ensure we've read the form data completely
+            var form = await Request.ReadFormAsync();
+            
             var httpRequest = HttpContext.Request;
 
-            if (httpRequest.Form.Files.Count == 0)
+            if (httpRequest.Form.Files == null || httpRequest.Form.Files.Count == 0)
             {
                 Logger.Warn("No file sent in the request.");
                 return BadRequest("No file sent in the request.");
             }
 
+            var savedFiles = new List<string>();
             foreach (var file in httpRequest.Form.Files)
             {
                 if (file.Length > 0)
@@ -77,16 +83,17 @@ public class UploadController : ControllerBase
                         await file.CopyToAsync(stream);
                     }
 
+                    savedFiles.Add(fileName);
                     Logger.Info("File saved successfully: {FilePath}", filePath);
                 }
             }
 
-            return Ok();
+            return Ok(new { Message = $"Successfully saved {savedFiles.Count} files", Files = savedFiles });
         }
         catch (Exception ex)
         {
             Logger.Error(ex, "Error saving file.");
-            return StatusCode(500, "Error saving file.");
+            return StatusCode(500, new { Error = "Error saving file.", Details = ex.Message });
         }
     }
 
