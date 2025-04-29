@@ -2,7 +2,9 @@
 using NLog;
 using RemoteSignTool.Common.Dto;
 using RemoteSignTool.Server.Services;
-using Ionic.Zip;
+using ICSharpCode.SharpZipLib.Zip;
+using System.IO;
+using System.Threading.Tasks;
 
 namespace RemoteSignTool.Server.Controllers;
 
@@ -58,11 +60,9 @@ public class SignToolController : ControllerBase
         Directory.CreateDirectory(extractionDirectoryName);
         Logger.Info("Directory created: {DirectoryName}", extractionDirectoryName);
 
-        using (ZipFile zip = new ZipFile(archivePath))
-        {
-            zip.ExtractAll(extractionDirectoryName);
-            Logger.Info("Files have been extracted to: {DirectoryName}", extractionDirectoryName);
-        }
+        // Extract the archive using SharpZipLib
+        ExtractZipArchive(archivePath, extractionDirectoryName);
+        Logger.Info("Files have been extracted to: {DirectoryName}", extractionDirectoryName);
 
         string signToolPath;
         if (!_signToolService.TryToFindSignToolPath(out signToolPath))
@@ -77,13 +77,10 @@ public class SignToolController : ControllerBase
         if (signResult.ExitCode == 0)
         {
             Logger.Info("SignTool successfully signed files");
-            using (ZipFile zip = new ZipFile())
-            {
-                // Currently, we flatten the hierarchy of files for sake of simplicity
-                zip.AddFiles(Directory.GetFiles(extractionDirectoryName), false, string.Empty);
-                zip.Save(Path.Combine(UploadController.UploadDirectoryName, signedArchiveName));
-                Logger.Info("Archive with signed files created: {ArchiveName}", signedArchiveName);
-            }
+            // Create archive with signed files
+            CreateZipArchive(Directory.GetFiles(extractionDirectoryName), 
+                Path.Combine(UploadController.UploadDirectoryName, signedArchiveName));
+            Logger.Info("Archive with signed files created: {ArchiveName}", signedArchiveName);
         }
         else
         {
@@ -100,5 +97,71 @@ public class SignToolController : ControllerBase
         };
 
         return Ok(result);
+    }
+
+    /// <summary>
+    /// Extracts a zip archive to the specified directory.
+    /// </summary>
+    /// <param name="archivePath">Path to the zip archive.</param>
+    /// <param name="outputDirectory">Directory to extract files to.</param>
+    private static void ExtractZipArchive(string archivePath, string outputDirectory)
+    {
+        using var fs = System.IO.File.OpenRead(archivePath);
+        using var zipInputStream = new ZipInputStream(fs);
+        
+        ZipEntry entry;
+        while ((entry = zipInputStream.GetNextEntry()) != null)
+        {
+            if (string.IsNullOrEmpty(entry.Name) || entry.IsDirectory)
+                continue;
+                
+            var outputPath = Path.Combine(outputDirectory, entry.Name);
+            
+            // Create directory if it doesn't exist
+            var directoryName = Path.GetDirectoryName(outputPath);
+            if (directoryName != null && !Directory.Exists(directoryName))
+            {
+                Directory.CreateDirectory(directoryName);
+            }
+            
+            using var outputStream = System.IO.File.Create(outputPath);
+            byte[] buffer = new byte[4096];
+            int size;
+            while ((size = zipInputStream.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                outputStream.Write(buffer, 0, size);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Creates a zip archive from the specified files.
+    /// </summary>
+    /// <param name="filesToAdd">Array of file paths to include in the archive.</param>
+    /// <param name="archivePath">Output path for the zip archive.</param>
+    private static void CreateZipArchive(string[] filesToAdd, string archivePath)
+    {
+        using var zipOutputStream = new ZipOutputStream(System.IO.File.Create(archivePath));
+        zipOutputStream.SetLevel(9); // Maximum compression
+        
+        byte[] buffer = new byte[4096];
+        
+        foreach (var filePath in filesToAdd)
+        {
+            var fileName = Path.GetFileName(filePath);
+            var entry = new ZipEntry(fileName);
+            entry.DateTime = System.IO.File.GetLastWriteTime(filePath);
+            zipOutputStream.PutNextEntry(entry);
+            
+            using var fs = System.IO.File.OpenRead(filePath);
+            int sourceBytes;
+            do
+            {
+                sourceBytes = fs.Read(buffer, 0, buffer.Length);
+                zipOutputStream.Write(buffer, 0, sourceBytes);
+            } while (sourceBytes > 0);
+        }
+        
+        zipOutputStream.Finish();
     }
 }
