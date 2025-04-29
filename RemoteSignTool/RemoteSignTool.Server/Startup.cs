@@ -1,6 +1,4 @@
-﻿using System.Web.Http;
-using Owin;
-
+﻿
 namespace RemoteSignTool.Server
 {
     public class Startup
