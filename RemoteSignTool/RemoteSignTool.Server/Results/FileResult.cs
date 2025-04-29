@@ -1,65 +1,45 @@
-﻿using System;
-using System.IO;
-using System.Net;
-using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Web;
-using System.Web.Http;
+﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.StaticFiles;
 
-namespace RemoteSignTool.Server.Results
+namespace RemoteSignTool.Server.Results;
+
+/// <summary>
+/// Represents a file result that can be returned from an API controller.
+/// </summary>
+public class FileResult : FileContentResult
 {
-    public class FileResult : IHttpActionResult
+    /// <summary>
+    /// Initializes a new instance of the <see cref="FileResult"/> class.
+    /// </summary>
+    /// <param name="fileContents">The file contents.</param>
+    /// <param name="contentType">The content type of the file.</param>
+    public FileResult(byte[] fileContents, string contentType) : base(fileContents, contentType)
     {
-        private readonly string _filePath;
-        private readonly string _contentType;
-        private readonly string _dispositionType;
-        private readonly string _dispositionName;
+    }
 
-        public FileResult(
-            string filePath,
-            string contentType = null,
-            string dispositionType = null,
-            string dispositionName = null)
+    /// <summary>
+    /// Initializes a new instance of the <see cref="FileResult"/> class.
+    /// </summary>
+    /// <param name="fileContents">The file contents.</param>
+    public FileResult(byte[] fileContents) : base(fileContents, "application/octet-stream")
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="FileResult"/> class from a file path.
+    /// </summary>
+    /// <param name="filePath">The path to the file.</param>
+    public FileResult(string filePath) : base(System.IO.File.ReadAllBytes(filePath), GetContentType(filePath))
+    {
+    }
+
+    private static string GetContentType(string filePath)
+    {
+        var provider = new FileExtensionContentTypeProvider();
+        if (!provider.TryGetContentType(filePath, out var contentType))
         {
-            if (filePath == null)
-            {
-                throw new ArgumentNullException(nameof(filePath));
-            }
-
-            this._filePath = filePath;
-            this._contentType = contentType;
-            this._dispositionType = dispositionType;
-            this._dispositionName = dispositionName;
+            contentType = "application/octet-stream";
         }
-
-        public Task<HttpResponseMessage> ExecuteAsync(CancellationToken cancellationToken)
-        {
-            return Task.Run(
-                () =>
-                {
-                    const int StreamBufferSize = 1024 * 1024; // 1MB buffer size
-                    var response = new HttpResponseMessage(HttpStatusCode.OK)
-                    {
-                        Content = new StreamContent(File.OpenRead(this._filePath), StreamBufferSize)
-                    };
-
-                    var contentType = this._contentType ?? MimeMapping.GetMimeMapping(Path.GetFileName(this._filePath));
-                    response.Content.Headers.ContentType = new MediaTypeHeaderValue(contentType);
-                    if (!string.IsNullOrEmpty(this._dispositionType))
-                    {
-                        response.Content.Headers.ContentDisposition.DispositionType = this._dispositionType;
-                    }
-
-                    if (!string.IsNullOrEmpty(this._dispositionName))
-                    {
-                        response.Content.Headers.ContentDisposition.Name = this._dispositionName;
-                    }
-
-                    return response;
-
-                }, cancellationToken);
-        }
+        return contentType;
     }
 }

@@ -1,105 +1,120 @@
-﻿using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Net;
-using System.Net.Http;
-using System.Threading.Tasks;
-using System.Web;
-using System.Web.Http;
+﻿using Microsoft.AspNetCore.Mvc;
 using NLog;
-using RemoteSignTool.Server.Results;
-using RemoteSignTool.Server.ServerFiles;
 
-namespace RemoteSignTool.Server.Controllers
+namespace RemoteSignTool.Server.Controllers;
+
+/// <summary>
+/// Controller for handling file uploads and downloads.
+/// </summary>
+[Route("api/upload")]
+[ApiController]
+public class UploadController : ControllerBase
 {
-    [RoutePrefix("api/upload")]
-    public class UploadController : ApiController
+    /// <summary>
+    /// The directory where uploaded files are stored.
+    /// </summary>
+    public const string UploadDirectoryName = "Upload";
+
+    private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="UploadController"/> class.
+    /// </summary>
+    public UploadController()
     {
-        #region Fields
+        // Ensure the upload directory exists
+        Directory.CreateDirectory(UploadDirectoryName);
+    }
 
-        public const string UploadDirectoryName = "Upload";
-        public const string DownloadRouteName = "Upload.Download";
+    /// <summary>
+    /// Downloads a file from the server.
+    /// </summary>
+    /// <param name="fileName">The name of the file to download.</param>
+    /// <returns>The file to be downloaded, or NotFound if the file does not exist.</returns>
+    [HttpGet("download/{fileName}")]
+    public IActionResult Download(string fileName)
+    {
+        var filePath = Path.Combine(UploadDirectoryName, fileName);
 
-        private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
-
-        #endregion
-
-        #region Constructors
-
-        #endregion
-
-        #region EventHandlers
-
-        #endregion
-
-        #region Public
-
-        [Route("download/{fileName}", Name = DownloadRouteName)]
-        [HttpGet]
-        public IHttpActionResult Download(string fileName)
+        if (!System.IO.File.Exists(filePath))
         {
-            var serverFilePath = Path.Combine(UploadDirectoryName, fileName);
-            if (!File.Exists(serverFilePath))
-            {
-                Logger.Warn("File not found for download: {0}");
-                return this.NotFound();
-            }
-
-            Logger.Info("Downloading file: {0}", fileName);
-            var mime = MimeMapping.GetMimeMapping(serverFilePath);
-            return new FileResult(serverFilePath, mime);
+            Logger.Warn("File not found for download: {FileName}", fileName);
+            return NotFound();
         }
 
-        [Route("save")]
-        [HttpPost]
-        public async Task<IHttpActionResult> Save()
+        Logger.Info("Downloading file: {FileName}", fileName);
+
+        var bytes = System.IO.File.ReadAllBytes(filePath);
+        return File(bytes, "application/octet-stream", fileName);
+    }
+
+    /// <summary>
+    /// Uploads a file to the server.
+    /// </summary>
+    /// <returns>Ok if the upload is successful, or BadRequest if there are issues.</returns>
+    [HttpPost("save")]
+    public async Task<IActionResult> Save()
+    {
+        try
         {
-            // The implementation is based on article from: http://www.asp.net/web-api/overview/advanced/sending-html-form-data-part-2
+            var httpRequest = HttpContext.Request;
 
-            // Check if the request contains multipart/form-data.
-            if (!Request.Content.IsMimeMultipartContent())
+            if (httpRequest.Form.Files.Count == 0)
             {
-                Logger.Warn("Content not support for file upload");
-                return this.StatusCode(HttpStatusCode.UnsupportedMediaType);
+                Logger.Warn("No file sent in the request.");
+                return BadRequest("No file sent in the request.");
             }
 
-            var rootPath = UploadDirectoryName;
-            var provider = new CustomMultipartFormDataStreamProvider(rootPath);
-
-            // Read the form data.
-            await Request.Content.ReadAsMultipartAsync(provider);
-            if (provider.FileData.Any())
+            foreach (var file in httpRequest.Form.Files)
             {
-                Logger.Info("File(s): {0} sucessfully saved", string.Join(", ", provider.FileData.Select(fd => fd.LocalFileName)));
-                return Ok();
-            }
-            else
-            {
-                Logger.Warn(Properties.Resources.NoFileSentErrorMessage);
-                return BadRequest(Properties.Resources.NoFileSentErrorMessage);
-            }
-        }
-
-        [Route("remove")]
-        [HttpPost]
-        public IHttpActionResult Remove(IEnumerable<string> fileNames)
-        {
-            if (fileNames != null)
-            {
-                foreach (var fileName in fileNames)
+                if (file.Length > 0)
                 {
-                    Logger.Info("Removing file: {0}", fileName);
-                    File.Delete(Path.Combine(UploadDirectoryName, fileName));
+                    var fileName = Path.GetFileName(file.FileName);
+                    var filePath = Path.Combine(UploadDirectoryName, fileName);
+
+                    using (var stream = new FileStream(filePath, FileMode.Create))
+                    {
+                        await file.CopyToAsync(stream);
+                    }
+
+                    Logger.Info("File saved successfully: {FilePath}", filePath);
                 }
             }
 
-            return this.Ok();
+            return Ok();
+        }
+        catch (Exception ex)
+        {
+            Logger.Error(ex, "Error saving file.");
+            return StatusCode(500, "Error saving file.");
+        }
+    }
+
+    /// <summary>
+    /// Removes a file from the server.
+    /// </summary>
+    /// <param name="fileNames">A list of file names to remove.</param>
+    /// <returns>Ok if the removal is successful.</returns>
+    [HttpPost("remove")]
+    public IActionResult Remove([FromBody] List<string> fileNames)
+    {
+        if (fileNames != null)
+        {
+            foreach (var fileName in fileNames)
+            {
+                var filePath = Path.Combine(UploadDirectoryName, fileName);
+                if (System.IO.File.Exists(filePath))
+                {
+                    System.IO.File.Delete(filePath);
+                    Logger.Info("File removed: {FilePath}", filePath);
+                }
+                else
+                {
+                    Logger.Warn("File not found for removal: {FilePath}", filePath);
+                }
+            }
         }
 
-        #endregion
-
-        #region Private
-
-        #endregion
+        return Ok();
     }
 }

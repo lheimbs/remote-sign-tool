@@ -1,14 +1,19 @@
-﻿using GalaSoft.MvvmLight.Messaging;
+﻿using NLog;
 
-namespace RemoteSignTool.Server.Logging
+namespace RemoteSignTool.Server.Logging;
+
+/// <summary>
+/// Provides helper methods for logging.
+/// </summary>
+public static class LoggingHelper
 {
-    // The class is used by NLog config that is why there are 0 references in here
-    public static class LoggingHelper
+    /// <summary>
+    /// Gets the logger for the specified type.
+    /// </summary>
+    /// <typeparam name="T">The type to get the logger for.</typeparam>
+    /// <returns>The logger instance.</returns>
+    public static Logger GetLogger<T>()
     {
-        public static void NotifyAboutLogEvent(string logLevel, string message, string exceptionMessage)
-        {
-            var messageToSend = !string.IsNullOrWhiteSpace(exceptionMessage) ? string.Format("{0} {1}", message, exceptionMessage) : message;
-            Messenger.Default.Send(new LogMessage(logLevel, messageToSend));
-        }
+        return LogManager.GetLogger(typeof(T).FullName);
     }
 }

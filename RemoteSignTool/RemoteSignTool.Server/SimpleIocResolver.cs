@@ -1,59 +1,31 @@
 ﻿using System;
-using System.Collections.Generic;
-using GalaSoft.MvvmLight.Ioc;
-using Microsoft.Practices.ServiceLocation;
+using Microsoft.Extensions.DependencyInjection;
 
-namespace RemoteSignTool.Server
+namespace RemoteSignTool.Server;
+
+/// <summary>
+/// Provides a simple implementation of IServiceProvider using the Microsoft Dependency Injection framework.
+/// </summary>
+public class SimpleIocResolver : IServiceProvider
 {
-    public class SimpleIocResolver : IDependencyResolver
+    private readonly IServiceProvider _serviceProvider;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="SimpleIocResolver"/> class.
+    /// </summary>
+    /// <param name="serviceProvider">The service provider.</param>
+    public SimpleIocResolver(IServiceProvider serviceProvider)
     {
-        public IDependencyScope BeginScope()
-        {
-            // SimpleIoc doesn't support scopes so return this object
-            return this;
-        }
+        _serviceProvider = serviceProvider;
+    }
 
-        public object GetService(Type serviceType)
-        {
-            try
-            {
-                return SimpleIoc.Default.GetInstanceWithoutCaching(serviceType);
-            }
-            catch (ActivationException)
-            {
-                // Implemented according to: http://www.asp.net/web-api/overview/advanced/dependency-injection
-                return null;
-            }
-        }
-
-        public IEnumerable<object> GetServices(Type serviceType)
-        {
-            try
-            {
-                return new List<object> { SimpleIoc.Default.GetInstanceWithoutCaching(serviceType) };
-            }
-            catch (ActivationException)
-            {
-                // Implemented according to: http://www.asp.net/web-api/overview/advanced/dependency-injection
-                return new List<object>();
-            }
-        }
-
-        #region IDisposable Support
-
-        protected virtual void Dispose(bool disposing)
-        {
-            // Do nothing
-        }
-
-        public void Dispose()
-        {
-            // Do not change this code. Put cleanup code in Dispose(bool disposing) above.
-            Dispose(true);
-            // TODO: uncomment the following line if the finalizer is overridden above.
-            // GC.SuppressFinalize(this);
-        }
-
-        #endregion
+    /// <summary>
+    /// Resolves the specified service type.
+    /// </summary>
+    /// <param name="serviceType">The type of service to resolve.</param>
+    /// <returns>An instance of the service, or null if it cannot be resolved.</returns>
+    public object? GetService(Type serviceType)
+    {
+        return _serviceProvider.GetService(serviceType);
     }
 }

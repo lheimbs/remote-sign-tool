@@ -1,5 +1,4 @@
-﻿using System.Threading.Tasks;
-using RemoteSignTool.Common.Dto;
+﻿using RemoteSignTool.Common.Dto;
 using RemoteSignTool.Server.Services;
 
 namespace RemoteSignTool.Server.Design
